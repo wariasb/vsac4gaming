@@ -1,0 +1,3 @@
+[submodule "external/pine"]
+	path = external/pine
+	url = https://github.com/GovanifY/pine.git
