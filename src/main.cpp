@@ -378,11 +378,6 @@ private:
         if (shouldReadPine()) {
             publishPineTelemetry();
         }
-        std::cout << "Sent -> steering: " << steering
-                  << " (ABS_X=" << leftMapped << ")"
-                  << ", throttle: " << throttle
-                  << ", brake: " << brake
-                  << " (ABS_RY=" << rightMapped << ")" << std::endl;
     }
 
     VirtualPad pad_{};
