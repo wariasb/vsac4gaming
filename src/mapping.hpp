@@ -4,8 +4,8 @@
 #include <stdexcept>
 
 struct AxisRange {
-    int minimum = -32768;
-    int maximum = 32767;
+    int minimum = -24576;
+    int maximum = 24575;
 
     int span() const {
         return maximum - minimum;
