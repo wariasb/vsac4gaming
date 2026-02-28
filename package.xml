@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>vsac4gaming</name>
+  <version>0.0.1</version>
+  <description>Vehicle State and Control bridge for racing game.</description>
+  <maintainer email="wariasb@gmail.com">User</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>rclcpp</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>rosidl_default_generators</build_depend>
+  <build_depend>rosidl_typesupport_fastrtps_cpp</build_depend>
+
+  <exec_depend>rclcpp</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>rosidl_typesupport_fastrtps_cpp</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+</package>

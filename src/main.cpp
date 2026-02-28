@@ -4,8 +4,11 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float32.hpp>
 
+#include "vsac4gaming/msg/vehicle_state.hpp"
+
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -21,10 +24,26 @@ constexpr double kAxisMin = -1.0;
 constexpr double kAxisMax = 1.0;
 constexpr double kTriggerMin = 0.0;
 constexpr double kTriggerMax = 1.0;
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kTwoPi = 2.0 * kPi;
 constexpr float kRadToDeg = 57.2957795f;
 
 constexpr double clamp(double value, double minValue, double maxValue) {
     return value < minValue ? minValue : (value > maxValue ? maxValue : value);
+}
+
+double normalizeAnglePi(double angle) {
+    if (!std::isfinite(angle)) {
+        return 0.0;
+    }
+
+    angle = std::fmod(angle, kTwoPi);
+    if (angle > kPi) {
+        angle -= kTwoPi;
+    } else if (angle < -kPi) {
+        angle += kTwoPi;
+    }
+    return angle;
 }
 
 struct PineTelemetry {
@@ -237,6 +256,7 @@ public:
         declare_parameter("steering_cmd_topic", std::string("/vi/steering_feedback"));
         declare_parameter("steering_angle_topic", std::string("/vi/steering_angle_rad"));
         declare_parameter("steering_angle_deg_topic", std::string("/vi/steering_angle_deg"));
+        declare_parameter("vehicle_state_topic", std::string("/vehicle_state"));
 
         steering_topic_ = get_parameter("steering_topic").as_string();
         throttle_topic_ = get_parameter("throttle_topic").as_string();
@@ -257,6 +277,7 @@ public:
         steering_cmd_topic_ = get_parameter("steering_cmd_topic").as_string();
         steering_angle_topic_ = get_parameter("steering_angle_topic").as_string();
         steering_angle_deg_topic_ = get_parameter("steering_angle_deg_topic").as_string();
+        vehicle_state_topic_ = get_parameter("vehicle_state_topic").as_string();
 
         pad_.open();
         pad_.setNeutral();
@@ -302,6 +323,8 @@ public:
         steering_angle_pub_ = create_publisher<std_msgs::msg::Float32>(steering_angle_topic_, 10);
         steering_angle_deg_pub_ =
             create_publisher<std_msgs::msg::Float32>(steering_angle_deg_topic_, 10);
+        vehicle_state_pub_ =
+            create_publisher<vsac4gaming::msg::VehicleState>(vehicle_state_topic_, 10);
 
         const double rate = publish_rate_hz_ > 0.0 ? publish_rate_hz_ : 60.0;
         timer_ = create_wall_timer(
@@ -338,15 +361,34 @@ private:
 
         const auto now = std::chrono::steady_clock::now();
         float accel = 0.0f;
+        float orient_vel_x = 0.0f;
+        float orient_vel_y = 0.0f;
+        float orient_vel_z = 0.0f;
         if (has_last_speed_) {
             const std::chrono::duration<float> dt = now - last_speed_time_;
             if (dt.count() > 0.0f) {
                 accel = (telemetry.speed - last_speed_) / dt.count();
             }
         }
+        if (has_last_orient_) {
+            const std::chrono::duration<float> dt = now - last_orient_time_;
+            if (dt.count() > 0.0f) {
+                const float d_roll = static_cast<float>(normalizeAnglePi(telemetry.roll - last_roll_));
+                const float d_pitch = static_cast<float>(normalizeAnglePi(telemetry.pitch - last_pitch_));
+                const float d_yaw = static_cast<float>(normalizeAnglePi(telemetry.yaw - last_yaw_));
+                orient_vel_x = d_roll / dt.count();
+                orient_vel_y = d_pitch / dt.count();
+                orient_vel_z = d_yaw / dt.count();
+            }
+        }
         last_speed_ = telemetry.speed;
         last_speed_time_ = now;
         has_last_speed_ = true;
+        last_roll_ = telemetry.roll;
+        last_pitch_ = telemetry.pitch;
+        last_yaw_ = telemetry.yaw;
+        last_orient_time_ = now;
+        has_last_orient_ = true;
 
         std_msgs::msg::Float32 msg;
         msg.data = telemetry.pos_x;
@@ -367,7 +409,7 @@ private:
         roll_pub_->publish(msg);
         msg.data = telemetry.pitch;
         pitch_pub_->publish(msg);
-        msg.data = telemetry.yaw;
+        msg.data = normalizeAnglePi(telemetry.yaw);
         yaw_pub_->publish(msg);
         msg.data = telemetry.steering_command;
         steering_cmd_pub_->publish(msg);
@@ -375,6 +417,24 @@ private:
         steering_angle_pub_->publish(msg);
         msg.data = telemetry.steering_angle_deg;
         steering_angle_deg_pub_->publish(msg);
+
+        vsac4gaming::msg::VehicleState state_msg;
+        state_msg.pos.x = telemetry.pos_x;
+        state_msg.pos.y = telemetry.pos_y;
+        state_msg.pos.z = telemetry.pos_z;
+        state_msg.vel.x = telemetry.speed;
+        state_msg.vel.y = 0.0;
+        state_msg.vel.z = 0.0;
+        state_msg.linear_acc.x = accel;
+        state_msg.linear_acc.y = 0.0;
+        state_msg.linear_acc.z = 0.0;
+        state_msg.orient.x = telemetry.roll;
+        state_msg.orient.y = telemetry.pitch;
+        state_msg.orient.z = normalizeAnglePi(telemetry.yaw);
+        state_msg.orient_vel.x = orient_vel_x;
+        state_msg.orient_vel.y = orient_vel_y;
+        state_msg.orient_vel.z = orient_vel_z;
+        vehicle_state_pub_->publish(state_msg);
     }
 
     /**
@@ -497,8 +557,13 @@ private:
     std::chrono::steady_clock::time_point last_pine_read_ = std::chrono::steady_clock::now();
     const std::chrono::milliseconds pine_read_interval_{40};
     std::chrono::steady_clock::time_point last_speed_time_ = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point last_orient_time_ = std::chrono::steady_clock::now();
     float last_speed_ = 0.0f;
+    float last_roll_ = 0.0f;
+    float last_pitch_ = 0.0f;
+    float last_yaw_ = 0.0f;
     bool has_last_speed_ = false;
+    bool has_last_orient_ = false;
     std::atomic<double> steering_{0.0};
     std::atomic<double> throttle_{0.0};
     std::atomic<double> brake_{0.0};
@@ -519,6 +584,7 @@ private:
     std::string steering_cmd_topic_;
     std::string steering_angle_topic_;
     std::string steering_angle_deg_topic_;
+    std::string vehicle_state_topic_;
     double publish_rate_hz_ = 60.0;
     double throttle_scale_ = 1.0;
     double brake_scale_ = 1.0;
@@ -539,6 +605,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr steering_cmd_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr steering_angle_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr steering_angle_deg_pub_;
+    rclcpp::Publisher<vsac4gaming::msg::VehicleState>::SharedPtr vehicle_state_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 }  // namespace
