@@ -430,7 +430,8 @@ private:
         state_msg.linear_acc.z = 0.0;
         state_msg.orient.x = telemetry.roll;
         state_msg.orient.y = telemetry.pitch;
-        state_msg.orient.z = normalizeAnglePi(telemetry.yaw);
+        // Add kPi to yaw to align with the global coordinate system
+        state_msg.orient.z = normalizeAnglePi(telemetry.yaw+kPi);
         state_msg.orient_vel.x = orient_vel_x;
         state_msg.orient_vel.y = orient_vel_y;
         state_msg.orient_vel.z = orient_vel_z;
